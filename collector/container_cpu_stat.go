@@ -37,7 +37,7 @@ func getCpuStat(pids []string) map[string]ContainerCpuStat {
 	resultList := make(map[string]ContainerCpuStat)
 	stat := ContainerCpuStat{} //initialize
 
-	for i := 0; i < len(pids); i++ {
+	for i := 0; i < len(pids)-1; i++ {
 		cpus, err := (exec.Command("bash", "-c", "cat /proc/"+pids[i]+"/stat")).Output()
 		if err != nil {
 			panic(err)
