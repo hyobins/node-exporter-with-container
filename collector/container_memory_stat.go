@@ -16,83 +16,50 @@
 package collector
 
 import (
-	"encoding/json"
-	"fmt"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/docker/docker/api/types"
 )
 
 type ContainerMemoryStat struct {
-	pid           string
-	containerID   string
-	containerName string
-	VmSize        float64
-	VmRss         float64
-	RssFile       float64
+	pid     string
+	VmSize  float64
+	VmRss   float64
+	RssFile float64
 }
 
-//GetMemoryStat return container's cpu usage
-func getMemoryStat(containers []types.Container) map[string]ContainerMemoryStat {
+//GetMemoryStat return memory usage by container
+func getMemoryStat(pids []string) map[string]ContainerMemoryStat {
 
 	resultList := make(map[string]ContainerMemoryStat)
 	stat := ContainerMemoryStat{} //initialize
 
-	for _, container := range containers {
-		m := make(map[string]interface{})
+	for i := 0; i < len(pids)-1; i++ {
+		lines, err := readLines("/proc/" + pids[i] + "/status")
 
-		pidpath := exec.Command("bash", "-c", "cd /run/docker/runtime-runc/moby/"+container.ID+" && cat state.json")
-		outputPath, _ := pidpath.Output()
-
-		//parse state.json of each container
-		err := json.Unmarshal(outputPath, &m)
 		if err != nil {
 			panic(err)
 		}
 
-		jsondata, _ := json.Marshal(m["cgroup_paths"].(map[string]interface{})["pids"])
+		re := regexp.MustCompile("[0-9]+")
+		m1 := re.FindAllString(string(lines[13]), -1)
+		m2 := re.FindAllString(string(lines[17]), -1)
+		m3 := re.FindAllString(string(lines[19]), -1)
 
-		//Get PIDs of each container
-		pid, _ := (exec.Command("bash", "-c", "cd "+string(jsondata)+" && cat tasks")).Output()
-		slice := strings.Split(string(pid), "\n")
-		fmt.Printf("slice: %s, len: %d", slice, len(slice))
+		vmsize, _ := strconv.ParseFloat(strings.Join(m1, ""), 64)
+		vmrss, _ := strconv.ParseFloat(strings.Join(m2, ""), 64)
+		rssfile, _ := strconv.ParseFloat(strings.Join(m3, ""), 64)
 
-		for i := 0; i < len(slice)-1; i++ {
-			fmt.Println("\nslice[i]:", slice[i])
-			lines, err := readLines("/proc/" + slice[i] + "/status")
-
-			if err != nil {
-				panic(err)
-			}
-			re := regexp.MustCompile("[0-9]+")
-			m1 := re.FindAllString(string(lines[13]), -1)
-			m2 := re.FindAllString(string(lines[17]), -1)
-			m3 := re.FindAllString(string(lines[19]), -1)
-
-			vmsize, _ := strconv.ParseFloat(strings.Join(m1, ""), 64)
-			vmrss, _ := strconv.ParseFloat(strings.Join(m2, ""), 64)
-			rssfile, _ := strconv.ParseFloat(strings.Join(m3, ""), 64)
-
-			containerName := strings.Join(container.Names, "")
-
-			stat = ContainerMemoryStat{
-				pid:           slice[i],
-				containerID:   container.ID,
-				containerName: containerName[1:],
-				VmSize:        vmsize,
-				VmRss:         vmrss,
-				RssFile:       rssfile,
-			}
-
-			resultList[slice[i]] = stat
-
+		stat = ContainerMemoryStat{
+			pid:     pids[i],
+			VmSize:  vmsize,
+			VmRss:   vmrss,
+			RssFile: rssfile,
 		}
 
+		resultList[pids[i]] = stat
+
 	}
-	fmt.Println("메모리 리스트", resultList)
 
 	return resultList
 }

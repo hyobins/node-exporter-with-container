@@ -17,6 +17,9 @@ package collector
 
 import (
 	"context"
+	"encoding/json"
+	"os/exec"
+	"strings"
 
 	"github.com/go-kit/kit/log"
 
@@ -37,17 +40,17 @@ type containerCollector struct {
 	vmrss   *prometheus.Desc
 	rssfile *prometheus.Desc
 
-	rx_bytes   *prometheus.Desc
-	rx_packets *prometheus.Desc
-	tx_bytes   *prometheus.Desc
-	tx_packets *prometheus.Desc
+	rxBytes   *prometheus.Desc
+	rxPackets *prometheus.Desc
+	txBytes   *prometheus.Desc
+	txPackets *prometheus.Desc
 }
 
 func init() {
 	registerCollector("container", defaultEnabled, NewContainerCollector)
 }
 
-//NewContainerCollector returns container stats
+//NewContainerCollector returns a collector exposing hardware resource stats by container
 func NewContainerCollector(logger log.Logger) (Collector, error) {
 	return &containerCollector{
 		logger: logger,
@@ -86,22 +89,22 @@ func NewContainerCollector(logger log.Logger) (Collector, error) {
 			"Current Memory RssFile by container.",
 			[]string{"id", "name", "type", "pid"}, nil,
 		),
-		rx_bytes: prometheus.NewDesc(
+		rxBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "", "container_net_rxbytes"),
 			"Current Network Receiver bytes by container.",
 			[]string{"id", "name", "type"}, nil,
 		),
-		rx_packets: prometheus.NewDesc(
+		rxPackets: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "", "container_net_rxpackets"),
 			"Current Network Receiver packets by container.",
 			[]string{"id", "name", "type"}, nil,
 		),
-		tx_bytes: prometheus.NewDesc(
+		txBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "", "container_net_txbytes"),
 			"Current Network Transmitter bytes by container.",
 			[]string{"id", "name", "type"}, nil,
 		),
-		tx_packets: prometheus.NewDesc(
+		txPackets: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "", "container_net_txpackets"),
 			"Current Network Transmitter packets by container.",
 			[]string{"id", "name", "type"}, nil,
@@ -113,64 +116,79 @@ func (c *containerCollector) Update(ch chan<- prometheus.Metric) error {
 	ctx := context.Background()
 	cli, _ := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
-
 	if err != nil {
 		panic(err)
 	}
 
-	cpuStatList := getCpuStat(containers)
-	for id, list := range cpuStatList {
-		ch <- prometheus.MustNewConstMetric(
-			c.utime,
-			prometheus.GaugeValue, list.utime, list.containerID, list.containerName, "utime", id,
-		)
-		ch <- prometheus.MustNewConstMetric(
-			c.stime,
-			prometheus.GaugeValue, list.stime, list.containerID, list.containerName, "stime", id,
-		)
-		ch <- prometheus.MustNewConstMetric(
-			c.cutime,
-			prometheus.GaugeValue, list.cutime, list.containerID, list.containerName, "cutime", id,
-		)
-		ch <- prometheus.MustNewConstMetric(
-			c.cstime,
-			prometheus.GaugeValue, list.cstime, list.containerID, list.containerName, "cstime", id,
-		)
-	}
+	for _, container := range containers {
+		m := make(map[string]interface{})
 
-	memoryStatList := getMemoryStat(containers)
-	for id, list := range memoryStatList {
-		ch <- prometheus.MustNewConstMetric(
-			c.vmsize,
-			prometheus.GaugeValue, list.VmSize, list.containerID, list.containerName, "vmsize", id,
-		)
-		ch <- prometheus.MustNewConstMetric(
-			c.vmrss,
-			prometheus.GaugeValue, list.VmRss, list.containerID, list.containerName, "vmrss", id,
-		)
-		ch <- prometheus.MustNewConstMetric(
-			c.rssfile,
-			prometheus.GaugeValue, list.RssFile, list.containerID, list.containerName, "rssfile", id,
-		)
-	}
+		pidpath := exec.Command("bash", "-c", "cd /run/docker/runtime-runc/moby/"+container.ID+" && cat state.json")
+		outputPath, _ := pidpath.Output()
 
-	networkStatList := getNetworkStat(containers)
-	for id, list := range networkStatList {
+		err := json.Unmarshal(outputPath, &m)
+		if err != nil {
+			panic(err)
+		}
+
+		jsondata, _ := json.Marshal(m["cgroup_paths"].(map[string]interface{})["pids"])
+		pid, _ := (exec.Command("bash", "-c", "cd "+string(jsondata)+" && cat tasks")).Output()
+		slice := strings.Split(string(pid), "\n")
+
+		containerName := strings.Join(container.Names, "")
+
+		cpuStatList := getCpuStat(slice)
+		for id, list := range cpuStatList {
+			ch <- prometheus.MustNewConstMetric(
+				c.utime,
+				prometheus.GaugeValue, list.utime, container.ID, containerName, "utime", id,
+			)
+			ch <- prometheus.MustNewConstMetric(
+				c.stime,
+				prometheus.GaugeValue, list.stime, container.ID, containerName, "stime", id,
+			)
+			ch <- prometheus.MustNewConstMetric(
+				c.cutime,
+				prometheus.GaugeValue, list.cutime, container.ID, containerName, "cutime", id,
+			)
+			ch <- prometheus.MustNewConstMetric(
+				c.cstime,
+				prometheus.GaugeValue, list.cstime, container.ID, containerName, "cstime", id,
+			)
+		}
+
+		memoryStatList := getMemoryStat(slice)
+		for id, list := range memoryStatList {
+			ch <- prometheus.MustNewConstMetric(
+				c.vmsize,
+				prometheus.GaugeValue, list.VmSize, container.ID, containerName, "vmsize", id,
+			)
+			ch <- prometheus.MustNewConstMetric(
+				c.vmrss,
+				prometheus.GaugeValue, list.VmRss, container.ID, containerName, "vmrss", id,
+			)
+			ch <- prometheus.MustNewConstMetric(
+				c.rssfile,
+				prometheus.GaugeValue, list.RssFile, container.ID, containerName, "rssfile", id,
+			)
+		}
+
+		networkStatList := getNetworkStat(slice[0])
 		ch <- prometheus.MustNewConstMetric(
-			c.rx_bytes,
-			prometheus.GaugeValue, list.rx_bytes, id, list.containerName, "rx_bytes",
+			c.rxBytes,
+			prometheus.GaugeValue, networkStatList.rx_bytes, container.ID, containerName, "rx_bytes",
 		)
 		ch <- prometheus.MustNewConstMetric(
-			c.rx_packets,
-			prometheus.GaugeValue, list.rx_packets, id, list.containerName, "rx_packets",
+			c.rxPackets,
+			prometheus.GaugeValue, networkStatList.rx_packets, container.ID, containerName, "rx_packets",
 		)
 		ch <- prometheus.MustNewConstMetric(
-			c.tx_bytes,
-			prometheus.GaugeValue, list.tx_bytes, id, list.containerName, "tx_bytes",
+			c.txBytes,
+			prometheus.GaugeValue, networkStatList.tx_bytes, container.ID, containerName, "tx_bytes",
 		)
 		ch <- prometheus.MustNewConstMetric(
-			c.tx_packets,
-			prometheus.GaugeValue, list.tx_packets, id, list.containerName, "tx_packets",
+			c.txPackets,
+			prometheus.GaugeValue, networkStatList.tx_packets, container.ID, containerName, "tx_packets",
 		)
 
 	}
