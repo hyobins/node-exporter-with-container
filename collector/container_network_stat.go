@@ -34,7 +34,6 @@ func readLines(path string) ([]string, error) {
 //GetNetworkStat returns network stats by container
 func getNetworkStat(pid string) ContainerNetworkStat {
 	var resultList ContainerNetworkStat
-	//resultList := make(map[string]ContainerNetworkStat)
 	stat := ContainerNetworkStat{} //initialize
 
 	lines, err := readLines("/proc/" + pid + "/net/dev")
