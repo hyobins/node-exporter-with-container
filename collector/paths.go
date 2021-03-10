@@ -25,6 +25,7 @@ var (
 	// The path of the proc filesystem.
 	procPath   = kingpin.Flag("path.procfs", "procfs mountpoint.").Default(procfs.DefaultMountPoint).String()
 	sysPath    = kingpin.Flag("path.sysfs", "sysfs mountpoint.").Default("/sys").String()
+	runPath    = kingpin.Flag("path.runsfs", "runfs mountpoint.").Default("/run").String()
 	rootfsPath = kingpin.Flag("path.rootfs", "rootfs mountpoint.").Default("/").String()
 )
 
@@ -34,6 +35,10 @@ func procFilePath(name string) string {
 
 func sysFilePath(name string) string {
 	return filepath.Join(*sysPath, name)
+}
+
+func runFilePath(name string) string {
+	return filepath.Join(*runPath, name)
 }
 
 func rootfsFilePath(name string) string {

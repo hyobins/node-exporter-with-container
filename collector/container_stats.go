@@ -123,7 +123,7 @@ func (c *containerCollector) Update(ch chan<- prometheus.Metric) error {
 	for _, container := range containers {
 		m := make(map[string]interface{})
 
-		pidpath := exec.Command("bash", "-c", "cd /run/docker/runtime-runc/moby/"+container.ID+" && cat state.json")
+		pidpath := exec.Command("bash", "-c", "cd "+runFilePath("docker/runtime-runc/moby/")+container.ID+" && cat state.json")
 		outputPath, _ := pidpath.Output()
 
 		err := json.Unmarshal(outputPath, &m)
