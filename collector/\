@@ -22,7 +22,9 @@ import (
 )
 
 type ContainerCpuStat struct {
-	pid    string
+	pid string
+	//containerID   string
+	//containerName string
 	utime  float64
 	stime  float64
 	cutime float64
@@ -34,6 +36,8 @@ func getCpuStat(pids []string) map[string]ContainerCpuStat {
 
 	resultList := make(map[string]ContainerCpuStat)
 	stat := ContainerCpuStat{} //initialize
+	
+	fmt.Printf("pids[0]: %s, pids[len(pids)-1]: %s", pids[0], pids[len(pids)-1])
 
 	for i := 0; i < len(pids)-1; i++ {
 		cpus, err := (exec.Command("bash", "-c", "cat /proc/"+pids[i]+"/stat")).Output()
