@@ -31,6 +31,7 @@ require (
 	github.com/soundcloud/go-runit v0.0.0-20150630195641-06ad41a06c4a
 	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
+	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
 	gotest.tools/v3 v3.0.3 // indirect
 )
 

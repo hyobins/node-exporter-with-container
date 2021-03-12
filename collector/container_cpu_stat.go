@@ -16,12 +16,13 @@
 package collector
 
 import (
-	"os/exec"
+	"fmt"
+	"io/ioutil"
 	"strconv"
 	"strings"
 )
 
-type ContainerCpuStat struct {
+type ContainerCPUStat struct {
 	pid    string
 	utime  float64
 	stime  float64
@@ -30,23 +31,32 @@ type ContainerCpuStat struct {
 }
 
 //GetMemoryStat return cpu usage by container
-func getCpuStat(pids []string) map[string]ContainerCpuStat {
+func getCPUStat(pids []string) map[string]ContainerCPUStat {
 
-	resultList := make(map[string]ContainerCpuStat)
-	stat := ContainerCpuStat{} //initialize
+	resultList := make(map[string]ContainerCPUStat)
 
 	for i := 0; i < len(pids)-1; i++ {
-		cpus, err := (exec.Command("bash", "-c", "cat /proc/"+pids[i]+"/stat")).Output()
+
+		// HB
+		// cpus, err := (exec.Command("bash", "-c", "cat "+procFilePath(pids[i])+"/stat")).Output()
+		// if err != nil {
+		// 	panic(err)
+		// }
+		// Edit JB : 2021.03.11
+		cpus, err := ioutil.ReadFile(procFilePath(pids[i] + "/stat"))
 		if err != nil {
+			fmt.Printf("ERROR. Failed to read file(container[ %s ] cpu stat).[ %s ]",
+				pids[i], err.Error())
 			panic(err)
 		}
+
 		cpu := strings.Split(string(cpus), " ")
 		utime, _ := strconv.ParseFloat(cpu[13], 64)
 		stime, _ := strconv.ParseFloat(cpu[14], 64)
 		cutime, _ := strconv.ParseFloat(cpu[15], 64)
 		cstime, _ := strconv.ParseFloat(cpu[16], 64)
 
-		stat = ContainerCpuStat{
+		stat := ContainerCPUStat{
 			pid:    pids[i],
 			utime:  utime,
 			stime:  stime,

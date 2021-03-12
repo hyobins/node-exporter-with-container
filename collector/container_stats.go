@@ -18,7 +18,8 @@ package collector
 import (
 	"context"
 	"encoding/json"
-	"os/exec"
+	"fmt"
+	"io/ioutil"
 	"strings"
 
 	"github.com/go-kit/kit/log"
@@ -117,27 +118,64 @@ func (c *containerCollector) Update(ch chan<- prometheus.Metric) error {
 	cli, _ := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
 	if err != nil {
-		panic(err)
+		// Edit : JB. 2021.03.11
+		// panic(err)
+		return fmt.Errorf("ERROR. Failed To Read Container List. [ %s ]", err.Error())
 	}
 
 	for _, container := range containers {
-		m := make(map[string]interface{})
 
-		pidpath := exec.Command("bash", "-c", "cd "+runFilePath("docker/runtime-runc/moby/")+container.ID+" && cat state.json")
-		outputPath, _ := pidpath.Output()
-
-		err := json.Unmarshal(outputPath, &m)
+		// Edit : JB. 2021.03.11
+		// Read state.json
+		statePath := fmt.Sprintf("%s/%s/state.json", runFilePath("docker/runtime-runc/moby"), container.ID)
+		stateFile, err := ioutil.ReadFile(statePath)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("ERROR. Failed to read file(container[ %s / %+v] state.json)[ %s ]",
+				container.ID, container.Names, err.Error())
+		}
+		// Decode state.json
+		stateJsonData := make(map[string]interface{})
+		err = json.Unmarshal(stateFile, &stateJsonData)
+		if err != nil {
+			return fmt.Errorf("ERROR. Failed to decode state.json[ %s ]", err.Error())
+		}
+		// Get pidfile path from state.json
+		cgroupPaths, isExist := stateJsonData["cgroup_paths"].(map[string]interface{})
+		if !isExist {
+			return fmt.Errorf("ERROR. Not found cgroup_paths from state.json")
+		}
+		pidPath, isExist := cgroupPaths["pids"].(string)
+		if !isExist {
+			return fmt.Errorf("ERROR. Not found cgroup_paths - pids from state.json")
+		}
+		// delete "/sys" from pidPath
+		pidPath = strings.TrimLeft(pidPath, "/sys")
+		// join runfs + pidpath
+		pidFilePath := fmt.Sprintf("%s/tasks", sysFilePath(pidPath))
+		// read container pids(tasks)
+		pid, err := ioutil.ReadFile(pidFilePath)
+		if err != nil {
+			return fmt.Errorf("ERROR. Failed to read file(container[ %s / %+v] pid).[ %s ]",
+				container.ID, container.Names, err.Error())
 		}
 
-		jsondata, _ := json.Marshal(m["cgroup_paths"].(map[string]interface{})["pids"])
-		pid, _ := (exec.Command("bash", "-c", "cd "+string(jsondata)+" && cat tasks")).Output()
+		// HB
+		// m := make(map[string]interface{})
+		// pidpath := exec.Command("bash", "-c", "cd "+runFilePath("docker/runtime-runc/moby")+"/"+container.ID+" && cat state.json")
+		// outputPath, _ := pidpath.Output()
+
+		// err := json.Unmarshal(outputPath, &m)
+		// if err != nil {
+		// 	panic(err)
+		// }
+		// jsondata, _ := json.Marshal(m["cgroup_paths"].(map[string]interface{})["pids"])
+		// pid, _ := (exec.Command("bash", "-c", "cd "+string(jsondata)+" && cat tasks")).Output()
+
 		slice := strings.Split(string(pid), "\n")
 
 		containerName := strings.Join(container.Names, "")
 
-		cpuStatList := getCpuStat(slice)
+		cpuStatList := getCPUStat(slice)
 		for id, list := range cpuStatList {
 			ch <- prometheus.MustNewConstMetric(
 				c.utime,
@@ -161,11 +199,11 @@ func (c *containerCollector) Update(ch chan<- prometheus.Metric) error {
 		for id, list := range memoryStatList {
 			ch <- prometheus.MustNewConstMetric(
 				c.vmsize,
-				prometheus.GaugeValue, list.VmSize, container.ID, containerName, "vmsize", id,
+				prometheus.GaugeValue, list.VMSize, container.ID, containerName, "vmsize", id,
 			)
 			ch <- prometheus.MustNewConstMetric(
 				c.vmrss,
-				prometheus.GaugeValue, list.VmRss, container.ID, containerName, "vmrss", id,
+				prometheus.GaugeValue, list.VMRss, container.ID, containerName, "vmrss", id,
 			)
 			ch <- prometheus.MustNewConstMetric(
 				c.rssfile,
@@ -176,19 +214,19 @@ func (c *containerCollector) Update(ch chan<- prometheus.Metric) error {
 		networkStatList := getNetworkStat(slice[0])
 		ch <- prometheus.MustNewConstMetric(
 			c.rxBytes,
-			prometheus.GaugeValue, networkStatList.rx_bytes, container.ID, containerName, "rx_bytes",
+			prometheus.GaugeValue, networkStatList.rxBytes, container.ID, containerName, "rx_bytes",
 		)
 		ch <- prometheus.MustNewConstMetric(
 			c.rxPackets,
-			prometheus.GaugeValue, networkStatList.rx_packets, container.ID, containerName, "rx_packets",
+			prometheus.GaugeValue, networkStatList.rxPackets, container.ID, containerName, "rx_packets",
 		)
 		ch <- prometheus.MustNewConstMetric(
 			c.txBytes,
-			prometheus.GaugeValue, networkStatList.tx_bytes, container.ID, containerName, "tx_bytes",
+			prometheus.GaugeValue, networkStatList.txBytes, container.ID, containerName, "tx_bytes",
 		)
 		ch <- prometheus.MustNewConstMetric(
 			c.txPackets,
-			prometheus.GaugeValue, networkStatList.tx_packets, container.ID, containerName, "tx_packets",
+			prometheus.GaugeValue, networkStatList.txPackets, container.ID, containerName, "tx_packets",
 		)
 
 	}

@@ -84,7 +84,8 @@ $(eval $(call goarch_pair,amd64,386))
 $(eval $(call goarch_pair,mips64,mips))
 $(eval $(call goarch_pair,mips64el,mipsel))
 
-all:: vet checkmetrics checkrules common-all $(cross-test) $(test-e2e)
+all:: vet checkmetrics checkrules common-all #$(cross-test) $(test-e2e)
+# all:: vet checkmetrics checkrules common-all $(cross-test) $(test-e2e)
 
 .PHONY: test
 test: collector/fixtures/sys/.unpacked

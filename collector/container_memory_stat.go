@@ -16,6 +16,7 @@
 package collector
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,8 +24,8 @@ import (
 
 type ContainerMemoryStat struct {
 	pid     string
-	VmSize  float64
-	VmRss   float64
+	VMSize  float64
+	VMRss   float64
 	RssFile float64
 }
 
@@ -32,12 +33,13 @@ type ContainerMemoryStat struct {
 func getMemoryStat(pids []string) map[string]ContainerMemoryStat {
 
 	resultList := make(map[string]ContainerMemoryStat)
-	stat := ContainerMemoryStat{} //initialize
 
 	for i := 0; i < len(pids)-1; i++ {
-		lines, err := readLines("/proc/" + pids[i] + "/status")
+		lines, err := readLines(procFilePath(pids[i]) + "/status")
 
 		if err != nil {
+			// Edit . JB : 2021.03.11
+			fmt.Printf("ERROR. Failed to read memory status. pid[ %s ]", pids[i])
 			panic(err)
 		}
 
@@ -50,10 +52,10 @@ func getMemoryStat(pids []string) map[string]ContainerMemoryStat {
 		vmrss, _ := strconv.ParseFloat(strings.Join(m2, ""), 64)
 		rssfile, _ := strconv.ParseFloat(strings.Join(m3, ""), 64)
 
-		stat = ContainerMemoryStat{
+		stat := ContainerMemoryStat{
 			pid:     pids[i],
-			VmSize:  vmsize,
-			VmRss:   vmrss,
+			VMSize:  vmsize,
+			VMRss:   vmrss,
 			RssFile: rssfile,
 		}
 
